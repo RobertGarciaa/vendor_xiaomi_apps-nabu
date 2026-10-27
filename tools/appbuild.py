@@ -165,12 +165,16 @@ def assemble_dex(tools: RomTools, smali_dirs, out_dex: Path, start_index: int = 
 
 def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
               extra_entries: dict, out_apk: Path,
+              resources_arsc: bytes | None = None,
               native_keep_dir: Path | None = None):
     """Rebuild the APK keeping original entries byte-identical where possible.
 
     dex_files maps an entry name to a built dex path. extra_entries maps an
-    entry name to raw bytes. If native_keep_dir is given, its symlinked copy of
-    the original lib/ entries is reused so no library is recompressed.
+    entry name to raw bytes. resources_arsc, when given, replaces the stock
+    resources.arsc — required whenever resource values changed (for example an
+    added values-ko table), because the arsc holds the string pool.
+    If native_keep_dir is given, its symlinked copy of the original lib/ entries
+    is reused so no library is recompressed.
     """
     with zipfile.ZipFile(stock) as src, zipfile.ZipFile(out_apk, 'w') as dst:
         dex_names = set(dex_files)
@@ -183,8 +187,12 @@ def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
                 continue
             if name in extra_entries:
                 continue
-            data = compiled_manifest if name == 'AndroidManifest.xml' \
-                else src.read(name)
+            if name == 'AndroidManifest.xml':
+                data = compiled_manifest
+            elif name == 'resources.arsc' and resources_arsc is not None:
+                data = resources_arsc
+            else:
+                data = src.read(name)
             dst.writestr(entry, data)
         for name, path in dex_files.items():
             dst.writestr(name, Path(path).read_bytes(),
@@ -202,14 +210,24 @@ def align_and_sign(tools: RomTools, unsigned: Path, aligned: Path, signed: Path)
     run([tools.apksigner, 'verify', signed])
 
 
-def verify_payload_preserved(stock: Path, built: Path):
-    """Every original resource, asset, native and unknown entry must be identical."""
+def verify_payload_preserved(stock: Path, built: Path,
+                            resources_changed: bool = False):
+    """Every original resource, asset, native and unknown entry must be identical.
+
+    resources.arsc is exempt only when the caller added translated resources:
+    the string pool lives in that file, so adding a values-ko table necessarily
+    changes it. The per-entry res/ payloads are still checked byte for byte.
+    """
     checked = 0
     with zipfile.ZipFile(stock) as src, zipfile.ZipFile(built) as dst:
         dst_names = set(dst.namelist())
         for entry in src.infolist():
             name = entry.filename
             if name == 'AndroidManifest.xml':
+                continue
+            if name == 'resources.arsc' and resources_changed:
+                if name not in dst_names:
+                    raise SystemExit('resources.arsc missing from rebuilt APK')
                 continue
             if name.startswith('classes') and name.endswith('.dex'):
                 continue
@@ -221,6 +239,18 @@ def verify_payload_preserved(stock: Path, built: Path):
                 raise SystemExit(f'changed entry during rebuild: {name}')
             checked += 1
     return checked
+
+
+def extract_resources_arsc(built_manifest_apk: Path) -> bytes:
+    """Read the resources.arsc that aapt2 produced during the resource rebuild.
+
+    apktool writes the rebuilt resource table into the APK it produces, not next
+    to the decoded tree, so the caller must pass that APK here.
+    """
+    with zipfile.ZipFile(built_manifest_apk) as z:
+        if 'resources.arsc' not in z.namelist():
+            raise SystemExit('aapt2 did not emit resources.arsc')
+        return z.read('resources.arsc')
 
 
 def record_artifacts(app: str, built: Path, inputs):

@@ -14,6 +14,15 @@
 
 
 
+
+
+## resources.arsc 재생성 (중요)
+
+번역을 추가하면 문자열 풀(`resources.arsc`)이 바뀐다. 초기 구현은 원본
+`resources.arsc`를 그대로 복사해 **한국어가 APK에 들어가지 않는 버그**가 있었다.
+지금은 aapt2가 만든 `resources.arsc`로 교체하며, `tools/verify-apps.py`가
+빌드된 APK에서 `ko` 구성과 샘플 키의 `(ko)` 값을 직접 확인해 재발을 막는다.
+
 ## 원본 유지 항목
 
 다음 접두사로 시작하는 키는 번역 대상에서 제외하고 원본 값을 유지한다.
@@ -51,6 +60,12 @@
 | `sync_notes_and_todos_unsync` | `%1$d`, `%2$d` 누락 | `노트 %1$d개, 할 일 %2$d개가 아직 동기화되지 않았습니다` |
 | `repeat_mode_set_item_month_detail_day` | 원문에 인자 없음 | `일` (코드가 숫자를 붙임) |
 
+### 영어 원문 오류 발견
+
+`wui_request_micro_permission`의 영어 원문은 "enable camera permission"이라고
+되어 있지만 중국어 원문은 마이크 권한이다. 중국어를 기준으로
+`마이크 권한을 켜 주세요`로 번역했다. 영어 문자열만 보고 번역하면 틀리는 사례다.
+
 ## 표 형식
 
 `translations/*.tsv`는 `<키><TAB><값>` 한 줄 형식이다.
@@ -66,12 +81,16 @@ python3 tools/check-translations.py \
     --tsv translations/notes-ko.tsv \
     --complete-from /path/to/required-keys.txt
 
-# 빌드 결과 종합 검사 (중국어 잔존 포함)
+# 빌드 결과 종합 검사 (중국어 잔존·arsc 반영 포함)
 python3 tools/verify-apps.py --rom-root /path/to/pixelos
 ```
 
-`verify-apps.py`는 번역 표와 빌드된 APK를 함께 검사해
-중국어가 남은 키가 있으면 실패한다. 허용 목록은 규제 신고 문구 5개뿐이다.
+`verify-apps.py`가 확인하는 것:
+- 번역 표에 중국어가 남아 있지 않은지 (규제 문구 5개만 허용)
+- 빌드된 APK의 `resources.arsc`에 `ko` 구성이 실제로 있는지
+- 샘플 키가 `(ko)` 값을 갖는지
 
 ## 한계
+
+
 

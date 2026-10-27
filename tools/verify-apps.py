@@ -89,12 +89,21 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
     if res.returncode != 0:
         errors.append(f'{name}: not 16 KB aligned: {res.stdout.strip()[:200]}')
 
-    # Payload preservation and dex naming
+    # Payload preservation and dex naming.
+    #
+    # resources.arsc must change: adding a values-ko table rewrites the string
+    # pool, so comparing it to stock would be wrong. Everything else — every
+    # res/ payload, every asset, every native library — must stay identical,
+    # because these apps derive asset paths from resource names.
     with zipfile.ZipFile(stock_apk) as src, zipfile.ZipFile(built) as dst:
         dst_names = set(dst.namelist())
         for entry in src.infolist():
             entry_name = entry.filename
             if entry_name == 'AndroidManifest.xml' or entry_name.startswith('META-INF/'):
+                continue
+            if entry_name == 'resources.arsc':
+                if entry_name not in dst_names:
+                    errors.append(f'{name}: resources.arsc missing')
                 continue
             if entry_name.startswith('classes') and entry_name.endswith('.dex'):
                 continue
@@ -135,13 +144,9 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
         if 'enabled' not in window or 'false' not in window:
             errors.append(f'{name}: {component} is not disabled')
 
-    # Korean strings free of Chinese text (regulatory numbers allowlisted)
-    ko_apk = built
-    with zipfile.ZipFile(ko_apk) as z:
+    # Korean strings actually present in the built resource table
+    with zipfile.ZipFile(built) as z:
         raw = z.read('resources.arsc') if 'resources.arsc' in z.namelist() else b''
-    strings_xml = ROOT / 'translations' / (
-        'notes-ko.tsv' if name == 'MIUINotes'
-        else 'creation-ko.tsv')
     tables = sorted((ROOT / 'translations').glob(
         'notes-ko.tsv' if name == 'MIUINotes'
         else 'creation-ko.tsv'))
@@ -152,6 +157,28 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
             key, value = line.split('\t', 1)
             if CJK.search(value) and key not in REGULATORY_ALLOW:
                 errors.append(f'{name}: Chinese left in {key}')
+
+    # The rebuilt resources.arsc must actually contain the Korean config. A
+    # common failure is copying the stock arsc back over the rebuilt one, which
+    # silently drops every added translation.
+    aapt2_bin = tools.root / 'prebuilts/sdk/tools/linux/bin/aapt2'
+    configs = sh([aapt2_bin, 'dump', 'configurations', built]).stdout
+    ko_present = any(line.strip().startswith('ko') for line in configs.splitlines())
+    if not ko_present:
+        errors.append(f'{name}: resources.arsc has no ko configuration; '
+                      'the rebuilt resource table was not installed')
+
+    # Spot-check that a translated value is really resolvable from the table.
+    sample_key = {'MIUINotes': 'cancel', 'Creation': 'setting_filing_text'}[name]
+    dump = sh([aapt2_bin, 'dump', 'resources', built]).stdout
+    marker = f'string/{sample_key}'
+    idx = dump.find(marker)
+    if idx < 0:
+        errors.append(f'{name}: sample string {sample_key} missing from resources')
+    else:
+        window = dump[idx:idx + 1200]
+        if '(ko)' not in window:
+            errors.append(f'{name}: {sample_key} has no Korean value')
 
     # Shim DEX presence
     if needs_shim:

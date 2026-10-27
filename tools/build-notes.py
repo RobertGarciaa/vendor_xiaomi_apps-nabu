@@ -181,6 +181,10 @@ def main():
              '-p', frame_dir, '-o', manifest_apk, decoded])
         with zipfile.ZipFile(manifest_apk) as z:
             compiled_manifest = z.read('AndroidManifest.xml')
+        # Adding values-ko changes the string pool, so the rebuilt resource table
+        # must replace the stock one; copying the original would drop the Korean
+        # strings again.
+        resources_arsc = appbuild.extract_resources_arsc(manifest_apk)
 
         # Reassemble the app DEX exactly as it was (no code changes).
         # smali dirs are named classes, classes2, classes3...; the DEX files must
@@ -210,13 +214,15 @@ def main():
             extra.update({n: p.read_bytes() for n, p in shim_files.items()})
 
         unsigned = work / 'unsigned.apk'
-        appbuild.build_apk(stock, compiled_manifest, dex_files, extra, unsigned)
+        appbuild.build_apk(stock, compiled_manifest, dex_files, extra, unsigned,
+                           resources_arsc=resources_arsc)
 
         aligned = work / 'aligned.apk'
         signed = work / 'signed.apk'
         appbuild.align_and_sign(tools, unsigned, aligned, signed)
 
-        preserved = appbuild.verify_payload_preserved(stock, signed)
+        preserved = appbuild.verify_payload_preserved(
+            stock, signed, resources_changed=True)
         print(f'preserved original entries: {preserved}')
 
         a.output.parent.mkdir(parents=True, exist_ok=True)
