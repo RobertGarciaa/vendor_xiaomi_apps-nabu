@@ -14,15 +14,15 @@ ifeq ($(TARGET_ENABLE_XIAOMI_APPS),true)
 PRODUCT_SOONG_NAMESPACES += \
     vendor/xiaomi/apps-nabu
 
+# Notes is privileged; Creation are normal platform-signed product apps.
 PRODUCT_PACKAGES += \
     MIUINotes \
     Creation
 
 # Privileged-permission allowlists must live on the same partition as the app.
-# Both privileged apps are installed to product/priv-app, so the allowlists go
-# to product/etc/permissions.
+# Notes is installed to product/priv-app. Creation's signature-only permissions
+# do not require priv-app placement or a privileged-permission allowlist.
 PRODUCT_COPY_FILES += \
-    vendor/xiaomi/apps-nabu/configs/privapp-permissions-miuinotes.xml:$(TARGET_COPY_OUT_PRODUCT)/etc/permissions/privapp-permissions-miuinotes.xml \
-    vendor/xiaomi/apps-nabu/configs/privapp-permissions-creation.xml:$(TARGET_COPY_OUT_PRODUCT)/etc/permissions/privapp-permissions-creation.xml
+    vendor/xiaomi/apps-nabu/configs/privapp-permissions-miuinotes.xml:$(TARGET_COPY_OUT_PRODUCT)/etc/permissions/privapp-permissions-miuinotes.xml
 
 endif # TARGET_ENABLE_XIAOMI_APPS

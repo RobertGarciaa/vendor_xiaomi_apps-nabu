@@ -2,8 +2,8 @@
 """Build the ported Xiaomi Creation APK for nabu.
 
 Creation is a Qt app whose DEX is small relative to its native payload. The same
-rules as Notes apply: only the DEX and compiled manifest change, every resource,
-asset and native byte stays identical to the pinned stock APK.
+rules as Notes apply: DEX/manifest and resources can change; assets and native
+payloads stay byte-identical to the pinned stock APK.
 
 Differences from Notes:
   * Creation is a normal user-facing app whose cloud sync is the only MIUI
@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import appbuild
+import harden_manifest
 from appbuild import ROOT, RomTools, run
 
 APP = 'Creation'
@@ -29,8 +30,11 @@ PIN = 'product/data-app/Creation/Creation.apk'
 OUT = ROOT / 'proprietary/ported/product/app/Creation/Creation.apk'
 
 # Xiaomi cloud/account components that need a backend PixelOS does not have.
+# Explicit components to disable in addition to the shared Xiaomi families.
 DISABLE_COMPONENTS = {
-    'com.miui.creation.cloud.CreationSyncService',
+    'com.miui.creation.cloudservice.service.CreationsSyncService',
+    'com.miui.creation.cloudservice.PushReceiver',
+    'com.miui.creation.cloudservice.AccountReceiver',
 }
 
 
@@ -75,18 +79,26 @@ def patch_manifest(manifest_path: Path):
     app = root.find('application')
     if app is None:
         raise SystemExit('no <application> element')
-
-    changed = []
-    for tag in ('activity', 'activity-alias', 'service', 'receiver', 'provider'):
-        for node in list(app.findall(tag)):
-            name = node.get(f'{{{appbuild.ANDROID_NS}}}name', '')
-            # The stock class name is obfuscated; match on the cloud/sync package
-            # family instead of a guessed class name.
-            if name in DISABLE_COMPONENTS or 'cloudservice' in name:
-                node.set(f'{{{appbuild.ANDROID_NS}}}enabled', 'false')
-                changed.append(f'disabled {name}')
-
     tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+
+    # Sever every Xiaomi cloud tie: account sign-in, cloud sync and Market
+    # updates. Creation's cloud class names are obfuscated, so the family
+    # matcher also covers the `cloudservice` package name.
+    changed = []
+    disabled = harden_manifest.block_xiaomi_services(
+        manifest_path, extra_components=DISABLE_COMPONENTS)
+    for tag, name, family in disabled:
+        changed.append(f'disabled {name} [{family}]')
+
+    removed_perms = harden_manifest.drop_install_package_permission(manifest_path)
+    for perm in removed_perms:
+        changed.append(f'removed {perm}')
+
+    remaining = harden_manifest.report_cloud_permissions(manifest_path)
+    if remaining:
+        print('  note: Xiaomi cloud permissions still declared (cannot be granted): '
+              + ', '.join(remaining))
+
     return changed
 
 
@@ -168,12 +180,13 @@ def main():
         shim_dex_dir = work / 'shimdex'
         shim_dex_dir.mkdir(exist_ok=True)
         shim_files = appbuild.assemble_dex(
-            tools, [a.shim_smali], shim_dex_dir, start_index=len(dex_files))
+            tools, [appbuild.filtered_shims(a.shim_smali, smali_root, work / 'filtered-shims')],
+            shim_dex_dir, start_index=len(dex_files))
         extra.update({n: p.read_bytes() for n, p in shim_files.items()})
 
         unsigned = work / 'unsigned.apk'
         appbuild.build_apk(stock, compiled_manifest, dex_files, extra, unsigned,
-                           resources_arsc=resources_arsc)
+                           resources_arsc=resources_arsc, rebuilt_resources=manifest_apk)
 
         aligned = work / 'aligned.apk'
         signed = work / 'signed.apk'
@@ -188,7 +201,9 @@ def main():
         record = appbuild.record_artifacts(
             APP, a.output,
             [stock, ROOT / 'translations/creation-ko.tsv',
-             Path(appbuild.__file__), Path(__file__)])
+             Path(appbuild.__file__), Path(harden_manifest.__file__), Path(__file__),
+             ROOT / 'tools/build-shims.py',
+             *sorted((ROOT / 'shims').rglob('*.java'))])
         print('built', a.output)
         print('record', record)
     finally:

@@ -8,9 +8,8 @@ What changes versus the stock APK:
     disables the Xiaomi cloud/account components, which have no backend here.
   * res/values-ko/strings.xml gets the missing Korean UI strings.
 
-Everything else is preserved byte for byte: resources.arsc, every res/, assets/
-and lib/ entry stays exactly as shipped by Xiaomi. That matters because these
-apps derive asset paths from resource names.
+Assets and native files stay byte-identical. The rebuilt resource table and
+matching compiled res/ files are packaged together to preserve resource lookup.
 """
 import argparse
 import re
@@ -23,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import appbuild
+import harden_manifest
 from appbuild import ROOT, RomTools, run
 
 APP = 'MIUINotes'
@@ -89,14 +89,25 @@ def patch_manifest(manifest_path: Path):
         del app.attrib[f'{{{appbuild.ANDROID_NS}}}backupAgent']
         changed.append('removed backupAgent')
 
-    for tag in ('activity', 'activity-alias', 'service', 'receiver', 'provider'):
-        for node in list(app.findall(tag)):
-            name = node.get(f'{{{appbuild.ANDROID_NS}}}name', '')
-            if name in DISABLE_COMPONENTS:
-                node.set(f'{{{appbuild.ANDROID_NS}}}enabled', 'false')
-                changed.append(f'disabled {name}')
-
     tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+
+    # Sever every Xiaomi cloud tie: account sign-in, cloud sync and Market
+    # updates. This port must not reach Xiaomi services, and disabling the
+    # components is stronger than hiding their UI.
+    disabled = harden_manifest.block_xiaomi_services(
+        manifest_path, extra_components=DISABLE_COMPONENTS)
+    for tag, name, family in disabled:
+        changed.append(f'disabled {name} [{family}]')
+
+    removed_perms = harden_manifest.drop_install_package_permission(manifest_path)
+    for perm in removed_perms:
+        changed.append(f'removed {perm}')
+
+    remaining = harden_manifest.report_cloud_permissions(manifest_path)
+    if remaining:
+        print('  note: Xiaomi cloud permissions still declared (cannot be granted): '
+              + ', '.join(remaining))
+
     return changed
 
 
@@ -210,12 +221,13 @@ def main():
             # Append the shims as the next classesN.dex so the runtime loads them.
             next_index = len(dex_files)
             shim_files = appbuild.assemble_dex(
-                tools, [a.shim_smali], shim_dex_dir, start_index=next_index)
+                tools, [appbuild.filtered_shims(a.shim_smali, smali_root, work / 'filtered-shims')],
+                shim_dex_dir, start_index=next_index)
             extra.update({n: p.read_bytes() for n, p in shim_files.items()})
 
         unsigned = work / 'unsigned.apk'
         appbuild.build_apk(stock, compiled_manifest, dex_files, extra, unsigned,
-                           resources_arsc=resources_arsc)
+                           resources_arsc=resources_arsc, rebuilt_resources=manifest_apk)
 
         aligned = work / 'aligned.apk'
         signed = work / 'signed.apk'
@@ -230,7 +242,9 @@ def main():
         record = appbuild.record_artifacts(
             APP, a.output,
             [stock, ROOT / 'translations/notes-ko.tsv',
-             Path(appbuild.__file__), Path(__file__)])
+             Path(appbuild.__file__), Path(harden_manifest.__file__), Path(__file__),
+             ROOT / 'tools/build-shims.py',
+             *sorted((ROOT / 'shims').rglob('*.java'))])
         print('built', a.output)
         print('record', record)
     finally:

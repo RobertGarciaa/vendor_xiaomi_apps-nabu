@@ -4,7 +4,7 @@
 Checks, per app:
   * built APK exists and is signed with the ROM platform key
   * zip alignment is 16 KB compatible
-  * resources.arsc, res/, assets/ and lib/ entries are byte-identical to stock
+  * assets/lib payloads are byte-identical; resource tables resolve their files
   * dex entry names follow Android's classes.dex/classesN.dex rule
   * the stock package name and version are preserved
   * manifest components that need a Xiaomi backend are disabled
@@ -15,6 +15,8 @@ Checks, per app:
 It also prints the size each app adds to the product partition.
 """
 import argparse
+from collections import Counter
+import json
 import re
 import subprocess
 import sys
@@ -24,6 +26,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import appbuild
+import harden_manifest
+import manifest_checks
+from dex_classes import class_descriptors
 from appbuild import ROOT
 
 CJK = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf]')
@@ -73,8 +78,6 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
         errors.append(f'{name}: apksigner verify failed: {res.stderr.strip()[:200]}')
     else:
         sha1s = re.findall(r'SHA-1 digest: ([0-9a-f]+)', res.stdout)
-        expected = sh([tools.apksigner, 'verify', '--print-certs',
-                       tools.key / 'platform.apk']) if False else None
         # Compare against the key the build used.
         key_cert = sh(['openssl', 'x509', '-in', tools.key / 'platform.x509.pem',
                        '-noout', '-fingerprint', '-sha1'])
@@ -83,6 +86,8 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
             want = m.group(1).replace(':', '').lower()
             if want not in sha1s:
                 errors.append(f'{name}: not signed with the ROM platform key')
+        else:
+            errors.append(f'{name}: cannot read ROM signing certificate')
 
     # Alignment
     res = sh([tools.zipalign, '-c', '-P', '16', '4', built])
@@ -105,6 +110,9 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
                 if entry_name not in dst_names:
                     errors.append(f'{name}: resources.arsc missing')
                 continue
+            if entry_name.startswith('res/'):
+                # Compiled XML/paths must match the rebuilt table; assets/native remain pinned.
+                continue
             if entry_name.startswith('classes') and entry_name.endswith('.dex'):
                 continue
             if entry_name not in dst_names:
@@ -120,6 +128,17 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
                 continue
             if not re.fullmatch(r'classes(?:[2-9]|[1-9]\d+)\.dex', n):
                 errors.append(f'{name}: invalid dex entry name {n}')
+        seen_classes = {}
+        for entry in dex:
+            try:
+                for descriptor in class_descriptors(dst.read(entry)):
+                    if descriptor in seen_classes:
+                        errors.append(f'{name}: duplicate DEX class {descriptor}: {seen_classes[descriptor]} / {entry}')
+                    seen_classes[descriptor] = entry
+                if not needs_shim and src.read(entry) != dst.read(entry):
+                    errors.append(f'{name}: original DEX changed: {entry}')
+            except (ValueError, IndexError) as failure:
+                errors.append(f'{name}: cannot inspect DEX {entry}: {failure}')
 
     # Package identity
     aapt2 = tools.root / 'prebuilts/sdk/tools/linux/bin/aapt2'
@@ -130,19 +149,46 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
     stock_pkg = re.search(
         r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'",
         stock_badging)
-    if pkg and stock_pkg and pkg.groups() != stock_pkg.groups():
+    if not pkg or not stock_pkg:
+        errors.append(f'{name}: cannot read package identity')
+    elif pkg.groups() != stock_pkg.groups():
         errors.append(f'{name}: package identity changed '
                       f'{stock_pkg.groups()} -> {pkg.groups()}')
 
-    # Disabled Xiaomi-backend components
-    tree = sh([aapt2, 'dump', 'xmltree', '--file', 'AndroidManifest.xml', built]).stdout
-    for component in disabled_names:
-        idx = tree.find(component)
-        if idx < 0:
-            continue
-        window = tree[idx:idx + 600]
-        if 'enabled' not in window or 'false' not in window:
-            errors.append(f'{name}: {component} is not disabled')
+    # Parse actual binary manifests; a disabled sibling must not hide an enabled component.
+    try:
+        manifests = []
+        for path in (stock_apk, built):
+            result = sh([aapt2, 'dump', 'xmltree', '--file', 'AndroidManifest.xml', path])
+            if result.returncode:
+                raise ValueError(result.stderr[:200])
+            manifests.append(manifest_checks.parse_xmltree(result.stdout))
+        original_manifest, built_manifest = manifests
+        before, after = map(manifest_checks.components, manifests)
+        for permission in ('android.permission.REQUEST_INSTALL_PACKAGES', 'android.permission.INSTALL_PACKAGES'):
+            if permission in manifest_checks.permissions(built_manifest):
+                errors.append(f'{name}: installer permission remains: {permission}')
+        for component in before:
+            if component not in disabled_names and not harden_manifest.blocked_family(component):
+                continue
+            if component not in after or not manifest_checks.disabled(after[component]):
+                errors.append(f'{name}: required component not disabled: {component}')
+    except ValueError as failure:
+        errors.append(f'{name}: cannot verify binary manifest: {failure}')
+
+    # Generated APKs must follow the reviewed helper, not just an old successful build.
+    try:
+        record = json.loads(built.with_suffix('.build.json').read_text())
+        if record['apk_sha1'] != appbuild.sha1_file(built):
+            errors.append(f'{name}: recorded APK hash mismatch')
+        helper = str(ROOT / 'tools/harden_manifest.py')
+        if helper not in record['inputs']:
+            errors.append(f'{name}: APK predates manifest hardening; rebuild required')
+        for path, expected_hash in record['inputs'].items():
+            if not Path(path).is_file() or appbuild.sha1_file(Path(path)) != expected_hash:
+                errors.append(f'{name}: stale generated APK input: {path}')
+    except (OSError, ValueError, KeyError) as failure:
+        errors.append(f'{name}: invalid build record: {failure}')
 
     # Korean strings actually present in the built resource table
     with zipfile.ZipFile(built) as z:
@@ -170,7 +216,27 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
 
     # Spot-check that a translated value is really resolvable from the table.
     sample_key = {'MIUINotes': 'cancel', 'Creation': 'setting_filing_text'}[name]
-    dump = sh([aapt2_bin, 'dump', 'resources', built]).stdout
+    resource_dump = sh([aapt2_bin, 'dump', 'resources', built])
+    dump = resource_dump.stdout
+    original_dump = sh([aapt2_bin, 'dump', 'resources', stock_apk])
+    def missing_files(result):
+        return Counter(line for line in result.stderr.splitlines() if 'but no such path exists' in line)
+    missing_paths = missing_files(resource_dump) - missing_files(original_dump)
+    if resource_dump.returncode or missing_paths:
+        errors.append(f'{name}: invalid resource table or {sum(missing_paths.values())} new missing resource file paths')
+    def resource_ids(text):
+        return {key: identifier for identifier, key in re.findall(
+            r'^\s*resource (0x[0-9a-fA-F]+) (\S+)', text, re.M)}
+    before_ids, after_ids = resource_ids(original_dump.stdout), resource_ids(dump)
+    if original_dump.returncode or not before_ids or not after_ids:
+        errors.append(f'{name}: cannot verify resource IDs')
+    else:
+        # aapt2 regenerates private inline drawable names ($...); their XML and table
+        # are rebuilt together. Named resources referenced by app/native code keep IDs.
+        moved = [key for key, identifier in before_ids.items()
+                 if '/$' not in key and after_ids.get(key) != identifier]
+        if moved:
+            errors.append(f'{name}: original resource IDs changed/missing: {moved[:8]}')
     marker = f'string/{sample_key}'
     idx = dump.find(marker)
     if idx < 0:
@@ -187,6 +253,9 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
         dex = [n for n in names if n.startswith('classes') and n.endswith('.dex')]
         if len(dex) < 2:
             errors.append(f'{name}: shim DEX missing')
+        for descriptor in ('Lmiui/os/Build;', 'Lmiui/util/FeatureParser;'):
+            if descriptor not in seen_classes:
+                errors.append(f'{name}: required shim class missing: {descriptor}')
 
     return built.stat().st_size
 
@@ -207,8 +276,14 @@ def main():
                          disabled, errors)
         total += size
         print(f'{name:12s} {size / 2**20:8.0f} MiB  {built}')
+        if size:
+            with zipfile.ZipFile(ROOT / built) as apk:
+                jni_growth = sum(entry.file_size - entry.compress_size for entry in apk.infolist()
+                                 if entry.filename.startswith('lib/') and entry.filename.endswith('.so'))
+            print(f'  Soong JNI store-size increase estimate: {jni_growth / 2**20:.1f} MiB '
+                  '(before alignment/signing/dex changes)')
 
-    print(f'{"total":12s} {total / 2**20:8.0f} MiB added to product')
+    print(f'{"total":12s} {total / 2**20:8.0f} MiB in prepared APKs; final product size requires Soong output')
 
     if errors:
         print('\nFAILURES:', file=sys.stderr)

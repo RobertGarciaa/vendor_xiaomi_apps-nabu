@@ -6,19 +6,20 @@ The pipeline is deliberately the same for every app:
   1. verify the pinned stock APK hash
   2. decode resources with the pinned stock resource frameworks
   3. decode DEX to smali
-  4. replace only the DEX and the compiled manifest
-  5. keep every original resource, asset and native byte identical
+  4. replace DEX/manifest and pair rebuilt tables with their resource files
+  5. keep original assets/native bytes and nonconflicting original resource paths
   6. align (16 KB), sign with the build platform key, verify the signature
   7. record source/tool/framework hashes for reproducibility
 
-Nothing here rewrites a stock resource or native payload. That rule exists
-because these apps derive asset names from resource paths and would break if the
-resource table were regenerated.
+Rebuilt resource tables travel with their compiled resource files. Original
+assets/native payloads stay unchanged; old obfuscated resource paths are retained
+when they do not collide with rebuilt paths.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -116,9 +117,7 @@ def install_frameworks(tools: RomTools, work: Path) -> Path:
     frame_dir = work / 'framework'
     frame_dir.mkdir(parents=True, exist_ok=True)
     for rel in FRAMEWORKS:
-        apk = ROOT / 'proprietary' / rel
-        if not apk.is_file():
-            raise SystemExit(f'missing pinned framework: {apk}')
+        apk = verify_pin(rel)
         run([tools.java, '-jar', tools.apktool, 'if', apk, '-p', frame_dir])
     return frame_dir
 
@@ -163,10 +162,33 @@ def assemble_dex(tools: RomTools, smali_dirs, out_dex: Path, start_index: int = 
     return produced
 
 
+def filtered_shims(shim_smali: Path, app_smali: Path, destination: Path):
+    """Never append a second definition of a class already owned by this app."""
+    def descriptor(path):
+        match = re.search(r'^\.class\s+[^\n]*?(L[^;\n]+;)$', path.read_text(), re.M)
+        if not match:
+            raise ValueError('Missing class declaration: ' + str(path))
+        return match[1]
+    owned = {descriptor(path) for path in app_smali.rglob('*.smali')}
+    destination.mkdir(parents=True, exist_ok=True)
+    omitted = []
+    for path in sorted(shim_smali.rglob('*.smali')):
+        name = descriptor(path)
+        if name in owned:
+            omitted.append(name)
+            continue
+        target = destination / path.relative_to(shim_smali)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+    print('App-owned classes omitted from shim DEX:', omitted)
+    return destination
+
+
 def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
               extra_entries: dict, out_apk: Path,
               resources_arsc: bytes | None = None,
-              native_keep_dir: Path | None = None):
+              native_keep_dir: Path | None = None,
+              rebuilt_resources: Path | None = None):
     """Rebuild the APK keeping original entries byte-identical where possible.
 
     dex_files maps an entry name to a built dex path. extra_entries maps an
@@ -176,6 +198,12 @@ def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
     If native_keep_dir is given, its symlinked copy of the original lib/ entries
     is reused so no library is recompressed.
     """
+    resources = {}
+    if resources_arsc is not None:
+        if rebuilt_resources is None:
+            raise ValueError('A rebuilt resource table requires its matching resource files')
+        with zipfile.ZipFile(rebuilt_resources) as rebuilt:
+            resources = {n: rebuilt.read(n) for n in rebuilt.namelist() if n.startswith('res/')}
     with zipfile.ZipFile(stock) as src, zipfile.ZipFile(out_apk, 'w') as dst:
         dex_names = set(dex_files)
         for entry in src.infolist():
@@ -186,6 +214,8 @@ def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
             if name in dex_names:
                 continue
             if name in extra_entries:
+                continue
+            if name in resources:
                 continue
             if name == 'AndroidManifest.xml':
                 data = compiled_manifest
@@ -198,6 +228,8 @@ def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
             dst.writestr(name, Path(path).read_bytes(),
                          compress_type=zipfile.ZIP_DEFLATED)
         for name, data in extra_entries.items():
+            dst.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+        for name, data in resources.items():
             dst.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
 
 
@@ -212,11 +244,12 @@ def align_and_sign(tools: RomTools, unsigned: Path, aligned: Path, signed: Path)
 
 def verify_payload_preserved(stock: Path, built: Path,
                             resources_changed: bool = False):
-    """Every original resource, asset, native and unknown entry must be identical.
+    """Original assets/native/unknown entries must be identical.
 
     resources.arsc is exempt only when the caller added translated resources:
     the string pool lives in that file, so adding a values-ko table necessarily
-    changes it. The per-entry res/ payloads are still checked byte for byte.
+    changes it. Matching res/ files can be recompiled and are checked structurally
+    by the APK verifier instead of pretending they remain byte-identical.
     """
     checked = 0
     with zipfile.ZipFile(stock) as src, zipfile.ZipFile(built) as dst:
@@ -228,6 +261,8 @@ def verify_payload_preserved(stock: Path, built: Path,
             if name == 'resources.arsc' and resources_changed:
                 if name not in dst_names:
                     raise SystemExit('resources.arsc missing from rebuilt APK')
+                continue
+            if name.startswith('res/') and resources_changed:
                 continue
             if name.startswith('classes') and name.endswith('.dex'):
                 continue
@@ -262,6 +297,9 @@ def record_artifacts(app: str, built: Path, inputs):
         'apk_bytes': built.stat().st_size,
         'inputs': {str(p): sha1_file(p) for p in inputs if Path(p).is_file()},
     }
+    for rel in FRAMEWORKS:
+        path = verify_pin(rel)
+        record['inputs'][str(path)] = sha1_file(path)
     out = built.with_suffix('.build.json')
     out.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
     return out

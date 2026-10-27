@@ -6,6 +6,7 @@ the DEX cannot be produced, or if the ported apps reference a MIUI/Xiaomi class
 or member that neither the app nor the shims provide.
 """
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,18 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def runtime_classfiles(classes, compile_sources):
+    excluded = set()
+    for source in compile_sources:
+        package = re.search(r'^package\s+([\w.]+);', source.read_text(), re.M)
+        if not package:
+            raise ValueError('Missing compile-stub package: ' + str(source))
+        directory = classes.joinpath(*package[1].split('.'))
+        excluded.add(directory / (source.stem + '.class'))
+        excluded.update(directory.glob(source.stem + '$*.class'))
+    return sorted(path for path in classes.rglob('*.class') if path not in excluded)
 
 
 def run(cmd, **kw):
@@ -53,6 +66,7 @@ def main():
             shutil.rmtree(d)
         d.mkdir(parents=True)
 
+    compile_sources = sorted((ROOT / 'shims/compile-stubs/src').rglob('*.java'))
     sources = sorted(
         list((ROOT / 'shims/src').rglob('*.java'))
         + list((ROOT / 'shims/compile-stubs/src').rglob('*.java')))
@@ -60,7 +74,7 @@ def main():
          '-classpath', f'{framework}:{android_jar}', '-d', classes, *sources])
 
     run([d8, '--min-api', '33', '--lib', android_jar, '--output', dexdir]
-        + sorted(classes.rglob('*.class')))
+        + runtime_classfiles(classes, compile_sources))
 
     run([java, '-jar', baksmali, 'd', dexdir / 'classes.dex', '-o', smali])
 
