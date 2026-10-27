@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Prebuilt stock apps for the Xiaomi Pad 5 (nabu) on PixelOS Android 17.
+//
+// The APKs are written by tools/build-*.py from the pinned stock inputs in
+// proprietary/ (Git-ignored) and signed with the ROM platform key. Soong
+// re-signs them again with the same key during the ROM build, so the shipped
+// artifact matches the rest of the platform.
+
+soong_namespace {
+}
+
+// Xiaomi Notes. Privileged because the stock manifest needs
+// WRITE_SECURE_SETTINGS, STATUS_BAR and MANAGE_USERS-style permissions.
+android_app_import {
+    name: "MIUINotes",
+    owner: "xiaomi/apps-nabu",
+    apk: "proprietary/ported/product/priv-app/MIUINotes/MIUINotes.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+// Xiaomi Creation ("Mi Canvas"). Privileged for INTERNAL_SYSTEM_WINDOW.
+android_app_import {
+    name: "Creation",
+    owner: "xiaomi/apps-nabu",
+    apk: "proprietary/ported/product/app/Creation/Creation.apk",
+    certificate: "platform",
+    privileged: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}

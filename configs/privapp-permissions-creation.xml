@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Privileged permissions requested by com.miui.creation (Creation 4.1.6).
+
+  Creation is installed to product/priv-app because its manifest declares
+  INTERNAL_SYSTEM_WINDOW (protectionLevel signature|module|recents), which a
+  regular app cannot hold. All three entries below are declared by the stock
+  manifest; only the ones Android actually gates are listed, so the allowlist
+  stays minimal.
+
+  READ_FRAME_BUFFER and SYSTEM_OVERLAY_WINDOW are signature permissions that a
+  platform-signed app already receives; they are not privapp-gated and are
+  therefore not allowlisted here.
+-->
+<permissions>
+    <privapp-permissions package="com.miui.creation">
+        <permission name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+    </privapp-permissions>
+</permissions>

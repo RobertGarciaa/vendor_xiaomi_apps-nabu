@@ -1,0 +1,10 @@
+# Built/signed APKs. Regenerated from the pinned stock inputs by tools/build-*.py.
+/proprietary/ported/
+
+# Stock extraction staging. Regenerated from the user's dump; never commit blobs.
+/proprietary/
+
+# Build scratch and Python caches.
+/build/
+__pycache__/
+*.pyc

@@ -1,0 +1,12 @@
+# Pinned stock inputs from Xiaomi Pad 9 Pro (shuntian) HyperOS 4 / Android 17
+#
+# Format: <path inside dump>|<sha1>
+# These are pinned build inputs. Extraction is rejected if a hash differs.
+
+# Application APKs
+product/data-app/MIUINotes/MIUINotes.apk|ee27c9d65a57b49aea886da3a119fdcb8cab39d9
+product/data-app/Creation/Creation.apk|800c8d2b214c4c4a9df2ad8d964dd6fb8db4cb92
+
+# Resource framework for apktool rebuilds (build input only, never installed).
+system_ext/app/miuisystem/miuisystem.apk|386a7b29b85dc433f89e0b5c5aea5f11e7ea78e8
+system/system/framework/framework-res.apk|1b10b2755b47f3ac835685d510470111fe1b278b

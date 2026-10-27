@@ -1,0 +1,119 @@
+ai_content_footer	AI가 생성한 콘텐츠입니다
+ai_text_stopped	중지됨
+ai_thinking	생각 중
+ai_thinking_done	생각 완료
+ai_thinking_status	AI가 생각 중…
+bookmark_delete	삭제
+cancel	취소
+card_title_ppt	PPT 개요
+card_title_summary	노트 요약
+cd_layout_exit_fullscreen	전체 화면 종료
+cd_layout_fullscreen	전체 화면
+chip_display_generate_format	%s 생성
+cloud_banner_sync_done	노트 %1$d개, 할 일 %2$d개 동기화 완료
+cloud_banner_sync_failed	노트 %1$d개, 할 일 %2$d개가 아직 동기화되지 않았습니다
+content_desc_close	닫기
+content_desc_create_note	새 노트
+creation_drag_type_not_support	이 파일 형식은 가져올 수 없습니다
+dlg_btn_set_passwords	비밀번호 설정
+editor_action_code	코드
+editor_action_link	링크
+file_import_audio_size_exceeded	오디오는 300MB까지만 지원합니다
+file_import_document_size_exceeded	첨부 파일은 150MB까지만 지원합니다
+file_import_image_size_exceeded	이미지는 20MB까지만 지원합니다
+float_menu_copy_url	주소 복사
+folder_back	뒤로
+folder_empty	폴더가 없습니다
+handwrite_downloading	노트를 내려받는 중입니다. 잠시만 기다려 주세요
+handwrite_note_title	필기 노트
+hint_note_title	제목
+import_create_note_failed	노트를 만들지 못했습니다
+import_default_file_title	문서 노트
+import_default_url_title	웹 노트
+import_file_unsupported_message	이 파일 형식은 아직 가져올 수 없습니다
+import_file_unsupported_title	지원하지 않는 파일 형식
+import_generation_failed	생성 실패
+import_menu_file_desc	문서를 가져와 AI로 요약합니다
+import_menu_url_desc	웹페이지를 가져와 AI로 요약합니다
+import_ocr_extract_failed	텍스트를 추출하지 못했습니다
+import_ocr_extracting	텍스트 추출 중
+import_processing_file	문서를 분석해 노트를 만드는 중
+import_processing_image	이미지를 분석해 노트를 만드는 중
+import_processing_url	웹페이지를 분석해 노트를 만드는 중
+import_retry	다시 시도
+import_summarize_failed	요약하지 못했습니다
+import_summarizing	요약 중
+import_uploading	%1$s 업로드 중
+label_release_to_send	놓아서 보내기
+label_view	보기
+llm_edit_confirmed	수정 확인됨
+llm_edit_rejected	수정 취소됨
+llm_image_describe	이미지 설명
+llm_image_describe_multi	이 %d장의 이미지 내용을 설명해 주세요
+
+menu_new_display_open	새 창에서 열기
+menu_pc_open	PC 프로그램으로 열기
+new_mindmap_title	새 마인드맵
+new_note_title	새 노트
+note_content_placeholder	노트 내용
+note_processing_channel_name	노트 처리
+note_source_label	%1$s · 출처 %2$s
+note_transcription_notification_text	녹음 내용을 텍스트로 변환하는 중입니다
+note_transcription_notification_title	녹음 변환 중
+notes_island_small_paused	일시중지됨
+ota_already_latest_message	최신 버전을 사용하고 있습니다
+ota_already_latest_title	업데이트 없음
+ota_check_frequency_title	업데이트 확인 주기
+ota_close	닫기
+ota_download_failed_title	내려받기 실패
+ota_download_network_error	네트워크 오류로 내려받지 못했습니다
+ota_frequency_daily	매일
+ota_frequency_daily_desc	매일 업데이트를 확인합니다
+ota_frequency_weekly	매주
+ota_frequency_weekly_desc	매주 업데이트를 확인합니다
+ota_install_failed_hint	나중에 다시 시도해 주세요
+ota_install_failed_title	설치 실패
+ota_install_now	지금 설치
+ota_install_success_message	설치가 완료되었습니다
+ota_install_success_title	설치 완료
+ota_network_unavailable_message	네트워크에 연결되어 있지 않습니다
+ota_network_unavailable_retry_later	나중에 다시 시도해 주세요
+ota_network_unavailable_title	네트워크 없음
+ota_new_version_title	새 버전
+ota_remind_later	나중에 알림
+ota_retry	다시 시도
+ota_signature_verify_failed	서명을 확인하지 못했습니다
+ota_update_now	지금 업데이트
+privacy_preference	개인정보 보호
+reminder_alert_notification_text	알림 시간이 되었습니다
+reminder_cancelled	알림이 취소되었습니다
+repeat_mode_set_item_month	매월 (%s)
+repeat_mode_set_item_month_detail	매월 %s
+repeat_mode_set_item_month_detail_day	일
+settings_category_other	기타
+settings_icp_summary	서비스 제공자 정보
+settings_note_sort_way_by_create	만든 날짜순
+settings_note_sort_way_by_modify	수정한 날짜순
+settings_wearable_auto_note_summary	웨어러블 기기에서 자동으로 노트를 만듭니다
+settings_wearable_device_settings_summary	웨어러블 기기 연결 설정
+settings_wearable_device_settings_title	웨어러블 기기
+settings_wearable_device_summary	노트를 웨어러블 기기와 연동합니다
+share_image_failed	이미지를 공유하지 못했습니다
+shortcut_group_edit_history	편집 기록
+shortcut_group_note_management	노트 관리
+shortcut_group_paragraph	문단
+shortcut_group_text_style	텍스트 스타일
+shortcut_group_todo_management	할 일 관리
+source_from_smart_call	스마트 통화에서 가져옴
+sync_all_done	노트 %1$d개, 할 일 %2$d개 동기화 완료
+sync_notes_and_todos_unsync	노트 %1$d개, 할 일 %2$d개가 아직 동기화되지 않았습니다
+task_title_schedule	일정
+thinking_processing	처리 중
+thinking_working	작업 중
+todo_create_failed	할 일을 만들지 못했습니다
+todo_new_title	새 할 일
+unnamed_folder	이름 없는 폴더
+wearable_completion_channel_name	웨어러블 완료 알림
+wearable_guide_channel_name	웨어러블 안내
+llm_image_paths_label	"\n\n[첨부 이미지 로컬 경로: %s]"
+llm_summary_restore	"다음은 이전 대화 요약입니다:\n%s"
