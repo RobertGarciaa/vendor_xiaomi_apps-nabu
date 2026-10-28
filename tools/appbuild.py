@@ -33,6 +33,7 @@ FRAMEWORKS = (
     'system/system/framework/framework-res.apk',
     'system_ext/app/miuisystem/miuisystem.apk',
 )
+NABU_FEATURES = 'nabu/product/etc/device_features/nabu.xml'
 
 
 def sha1_file(path: Path) -> str:
@@ -83,6 +84,16 @@ class RomTools:
         self.d8 = self.sdk_bin / 'd8'
         self.zipalign = self.sdk_bin / 'zipalign'
         self.apksigner = self.sdk_bin / 'apksigner'
+        # A source checkout need not have out/host yet. Use the ROM's checked-in
+        # SDK tools when no freshly built host executable exists.
+        prebuilt_bin = self.root / 'prebuilts/sdk/tools/linux/bin'
+        for name in ('zipalign',):
+            if not getattr(self, name).is_file():
+                setattr(self, name, prebuilt_bin / name)
+        if not self.apksigner.is_file():
+            # The source prebuilt's shell launcher expects the SDK installation
+            # layout; invoke its pinned JAR directly in a source checkout.
+            self.apksigner = prebuilt_bin.parent / 'lib/apksigner.jar'
         self.baksmali = self.root / 'prebuilts/extract-tools/common/smali/baksmali.jar'
         self.smali = self.root / 'prebuilts/extract-tools/common/smali/smali.jar'
         self.apktool = self.root / 'prebuilts/extract-tools/common/apktool/apktool.jar'
@@ -106,11 +117,15 @@ class RomTools:
 
     def check(self):
         missing = [str(p) for p in
-                   (self.d8, self.zipalign, self.apksigner, self.baksmali,
+                   (self.zipalign, self.apksigner, self.baksmali,
                     self.apktool, self.android_jar)
                    if not Path(p).exists()]
         if missing:
             raise SystemExit('missing build tools:\n  ' + '\n  '.join(missing))
+
+    def signer(self, *args):
+        command = [self.java, '-jar', self.apksigner] if self.apksigner.suffix == '.jar' else [self.apksigner]
+        return command + list(args)
 
 
 def install_frameworks(tools: RomTools, work: Path) -> Path:
@@ -235,11 +250,11 @@ def build_apk(stock: Path, compiled_manifest: bytes, dex_files: dict,
 
 def align_and_sign(tools: RomTools, unsigned: Path, aligned: Path, signed: Path):
     run([tools.zipalign, '-f', '-P', '16', '4', unsigned, aligned])
-    run([tools.apksigner, 'sign',
+    run(tools.signer('sign',
          '--key', tools.key / 'platform.pk8',
          '--cert', tools.key / 'platform.x509.pem',
-         '--out', signed, aligned])
-    run([tools.apksigner, 'verify', signed])
+         '--out', signed, aligned))
+    run(tools.signer('verify', signed))
 
 
 def verify_payload_preserved(stock: Path, built: Path,
@@ -289,17 +304,18 @@ def extract_resources_arsc(built_manifest_apk: Path) -> bytes:
 
 
 def record_artifacts(app: str, built: Path, inputs):
-    """Write a small JSON record next to the built APK (this file is committed)."""
+    """Write a relocatable record beside the ignored, generated APK."""
+    paths = sorted(set(map(Path, inputs)) | {verify_pin(rel) for rel in FRAMEWORKS}
+                   | {ROOT / 'proprietary-files.txt'})
     record = {
+        'schema': 2,
         'app': app,
         'apk_sha1': sha1_file(built),
         'apk_sha256': hashlib.sha256(built.read_bytes()).hexdigest(),
         'apk_bytes': built.stat().st_size,
-        'inputs': {str(p): sha1_file(p) for p in inputs if Path(p).is_file()},
+        'inputs': {p.resolve().relative_to(ROOT.resolve()).as_posix(): sha1_file(p)
+                   for p in paths},
     }
-    for rel in FRAMEWORKS:
-        path = verify_pin(rel)
-        record['inputs'][str(path)] = sha1_file(path)
     out = built.with_suffix('.build.json')
     out.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
     return out

@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -73,7 +74,7 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
     stock_apk = ROOT / 'proprietary' / stock
 
     # Signature
-    res = sh([tools.apksigner, 'verify', '--print-certs', built])
+    res = sh(tools.signer('verify', '--print-certs', built))
     if res.returncode != 0:
         errors.append(f'{name}: apksigner verify failed: {res.stderr.strip()[:200]}')
     else:
@@ -164,6 +165,26 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
                 raise ValueError(result.stderr[:200])
             manifests.append(manifest_checks.parse_xmltree(result.stdout))
         original_manifest, built_manifest = manifests
+        for app in built_manifest['children']:
+            if app['tag'] == 'application' and any(
+                    child['tag'] == 'uses-library' and
+                    child['attrs'].get('name') == 'micloud-sdk'
+                    for child in app['children']):
+                errors.append(f'{name}: unavailable micloud-sdk shared-library declaration remains')
+        if name == 'MIUINotes':
+            # Platform signing does not waive the Android 17 privapp allowlist.
+            # Match the product partition, where this privileged APK is installed.
+            ns = '{http://schemas.android.com/apk/res/android}'
+            framework = ET.parse(tools.root / 'frameworks/base/core/res/AndroidManifest.xml')
+            privileged = {node.get(ns + 'name') for node in framework.getroot().findall('permission')
+                          if 'privileged' in node.get(ns + 'protectionLevel', '').split('|')}
+            allowlist = ET.parse(ROOT / 'configs/privapp-permissions-miuinotes.xml')
+            allowed = {node.get('name') for entry in allowlist.getroot().findall('privapp-permissions')
+                       if entry.get('package') == 'com.miui.notes'
+                       for node in list(entry) if node.tag in ('permission', 'deny-permission')}
+            missing = manifest_checks.active_permissions(built_manifest, 37) & privileged - allowed
+            for permission in sorted(missing):
+                errors.append(f'{name}: boot-fatal under privapp enforcement: missing {permission}')
         before, after = map(manifest_checks.components, manifests)
         for permission in ('android.permission.REQUEST_INSTALL_PACKAGES', 'android.permission.INSTALL_PACKAGES'):
             if permission in manifest_checks.permissions(built_manifest):
@@ -181,11 +202,16 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
         record = json.loads(built.with_suffix('.build.json').read_text())
         if record['apk_sha1'] != appbuild.sha1_file(built):
             errors.append(f'{name}: recorded APK hash mismatch')
-        helper = str(ROOT / 'tools/harden_manifest.py')
+        if record.get('schema') != 2:
+            raise ValueError('legacy absolute-path build record; rebuild for this checkout')
+        helper = 'tools/harden_manifest.py'
         if helper not in record['inputs']:
             errors.append(f'{name}: APK predates manifest hardening; rebuild required')
         for path, expected_hash in record['inputs'].items():
-            if not Path(path).is_file() or appbuild.sha1_file(Path(path)) != expected_hash:
+            source = ROOT / path
+            if Path(path).is_absolute() or not source.resolve().is_relative_to(ROOT.resolve()):
+                errors.append(f'{name}: input escapes checkout: {path}')
+            elif not source.is_file() or appbuild.sha1_file(source) != expected_hash:
                 errors.append(f'{name}: stale generated APK input: {path}')
     except (OSError, ValueError, KeyError) as failure:
         errors.append(f'{name}: invalid build record: {failure}')
@@ -256,6 +282,20 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
         for descriptor in ('Lmiui/os/Build;', 'Lmiui/util/FeatureParser;'):
             if descriptor not in seen_classes:
                 errors.append(f'{name}: required shim class missing: {descriptor}')
+        for descriptor in ('Landroid/content/res/MiuiConfiguration;',
+                           'Landroid/provider/MiuiSettings$System;',
+                           'Landroid/util/MiuiDisplayMetrics;',
+                           'Landroid/util/MiuiMultiWindowUtils;',
+                           'Landroid/view/MiuiCompositionSamplingListener;'):
+            if descriptor not in seen_classes:
+                errors.append(f'{name}: MIUI android.* compatibility class missing: {descriptor}')
+        if 'Landroid/graphics/GraphicBuffer;' in seen_classes:
+            errors.append(f'{name}: compile-only framework stub leaked into APK')
+        with zipfile.ZipFile(built) as apk:
+            if 'assets/nabu_features.xml' not in apk.namelist():
+                errors.append(f'{name}: pinned Pad 5 feature asset missing')
+            elif apk.read('assets/nabu_features.xml') != appbuild.verify_pin(appbuild.NABU_FEATURES).read_bytes():
+                errors.append(f'{name}: packaged Pad 5 features differ from the pinned input')
 
     return built.stat().st_size
 

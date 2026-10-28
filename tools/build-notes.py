@@ -91,6 +91,9 @@ def patch_manifest(manifest_path: Path):
 
     tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
 
+    for library in harden_manifest.drop_micloud_library(manifest_path):
+        changed.append(f'removed unavailable shared library {library}')
+
     # Sever every Xiaomi cloud tie: account sign-in, cloud sync and Market
     # updates. This port must not reach Xiaomi services, and disabling the
     # components is stronger than hiding their UI.
@@ -157,7 +160,7 @@ def main():
     p.add_argument('--rom-root', required=True, type=Path)
     p.add_argument('--output', type=Path, default=OUT)
     p.add_argument('--keep-work', type=Path)
-    p.add_argument('--shim-smali', type=Path,
+    p.add_argument('--shim-smali', type=Path, required=True,
                    help='decoded shim smali tree (from build-shims.py --keep)')
     a = p.parse_args()
 
@@ -214,7 +217,8 @@ def main():
         dex_dir.mkdir(exist_ok=True)
         dex_files = appbuild.assemble_dex(tools, smali_dirs, dex_dir)
 
-        extra = {}
+        features = appbuild.verify_pin(appbuild.NABU_FEATURES)
+        extra = {'assets/nabu_features.xml': features.read_bytes()}
         if a.shim_smali:
             shim_dex_dir = work / 'shimdex'
             shim_dex_dir.mkdir(exist_ok=True)
@@ -241,7 +245,7 @@ def main():
         shutil.copy2(signed, a.output)
         record = appbuild.record_artifacts(
             APP, a.output,
-            [stock, ROOT / 'translations/notes-ko.tsv',
+            [stock, features, ROOT / 'translations/notes-ko.tsv',
              Path(appbuild.__file__), Path(harden_manifest.__file__), Path(__file__),
              ROOT / 'tools/build-shims.py',
              *sorted((ROOT / 'shims').rglob('*.java'))])

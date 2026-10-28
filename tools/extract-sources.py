@@ -6,6 +6,7 @@ wrong or damaged dump cannot leave a half-populated proprietary/ tree.
 """
 import argparse
 import hashlib
+import os
 import shutil
 import sys
 import tempfile
@@ -38,8 +39,10 @@ def sha1_file(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--dump', required=True, type=Path,
+    p.add_argument('--dump', type=Path,
                    help='root of the extracted shuntian dump')
+    p.add_argument('--nabu-dump', type=Path,
+                   help='Pad 5 OS1.0.6.0 dump for pins under the nabu/ staging prefix')
     p.add_argument('--verify-only', action='store_true',
                    help='only verify the already extracted proprietary/ tree')
     a = p.parse_args()
@@ -61,20 +64,15 @@ def main():
         print(f'PASS: {len(pins)} pinned stock inputs verified')
         return
 
-    dump = a.dump.resolve()
-    if not dump.is_dir():
-        raise SystemExit(f'Dump directory not found: {dump}')
-
-    if (ROOT / 'proprietary').exists():
-        residual = [x for x in (ROOT / 'proprietary').rglob('*') if x.is_file()]
-        if residual:
-            print(f'NOTE: replacing {len(residual)} existing file(s) under proprietary/',
-                  file=sys.stderr)
+    for label, dump in (('--dump', a.dump), ('--nabu-dump', a.nabu_dump)):
+        if dump is None or not dump.is_dir():
+            raise SystemExit(f'{label} must name an existing source dump')
 
     with tempfile.TemporaryDirectory(prefix='apps-nabu-extract-') as tmp:
         stage = Path(tmp)
         for src, want in pins:
-            source = dump / src
+            source = (a.nabu_dump / src.removeprefix('nabu/')
+                      if src.startswith('nabu/') else a.dump / src)
             if not source.is_file():
                 raise SystemExit(f'Missing pinned input in dump: {src}')
             got = sha1_file(source)
@@ -87,10 +85,19 @@ def main():
             shutil.copy2(source, target)
             print(f'verified {src}')
 
-        # Only replace the tree once every pin has matched.
-        if (ROOT / 'proprietary').exists():
-            shutil.rmtree(ROOT / 'proprietary')
-        shutil.copytree(stage, ROOT / 'proprietary')
+        # Replace only verified input files. Never delete ignored ported APKs or
+        # unrelated staging files when refreshing an extraction. Each replace is
+        # atomic even when TMPDIR and the repository use different filesystems.
+        for src, _ in pins:
+            target = ROOT / 'proprietary' / src
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.extract-', delete=False) as temporary:
+                replacement = Path(temporary.name)
+            try:
+                shutil.copy2(stage / src, replacement)
+                os.replace(replacement, target)
+            finally:
+                replacement.unlink(missing_ok=True)
 
     print(f'PASS: extracted and verified {len(pins)} pinned stock inputs')
 

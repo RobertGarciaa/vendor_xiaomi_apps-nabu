@@ -48,3 +48,20 @@ def disabled(node):
 def permissions(root):
     return {node['attrs'].get('name', '') for node in root['children']
             if node['tag'] in ('uses-permission', 'uses-permission-sdk-23', 'uses-permission-sdk-m')}
+
+def active_permissions(root, sdk):
+    """Honor maxSdkVersion; obsolete stock declarations are not current grants."""
+    result = set()
+    for node in root['children']:
+        if node['tag'] not in ('uses-permission', 'uses-permission-sdk-23', 'uses-permission-sdk-m'):
+            continue
+        maximum = node['attrs'].get('maxSdkVersion')
+        if maximum is not None:
+            # aapt2 prints typed integers as '(type 0x10)0x1c'.
+            match = re.search(r'(0x[0-9a-fA-F]+|\d+)$', maximum)
+            if not match:
+                raise ValueError('Unrecognized maxSdkVersion: ' + maximum)
+            if int(match[1], 16 if match[1].startswith('0x') else 10) < sdk:
+                continue
+        result.add(node['attrs'].get('name', ''))
+    return result

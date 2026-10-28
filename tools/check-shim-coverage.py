@@ -1,102 +1,85 @@
 #!/usr/bin/env python3
-"""Verify that the compiled shim DEX provides every member the ported app needs.
+"""Check exact external MIUI descriptors against app-local DEX definitions.
 
-The app's DEX files reference MIUI/Xiaomi classes that PixelOS does not provide.
-This script compares those references against the classes and members actually
-present in the built shim DEX, plus the classes the app already defines itself.
-A remaining gap would be NoClassDefFoundError / NoSuchMethodError at runtime.
+Includes MIUI additions under android.*, not just miui.* packages. This is a
+linkage check for the supplied classes, not a test of runtime behavior, hidden
+Android APIs, reflection, JNI or optional service availability.
 """
 import re
 import sys
 from pathlib import Path
 
 STR = re.compile(r'"(?:\\.|[^"\\])*"')
-CLASS_LINE = re.compile(r'^\.class\s+.*?(L[^;]+;)\s*$', re.M)
-METHOD_DECL = re.compile(r'^\.method\s+(?:[^\n]*?\s)?([^\s(]+)\(', re.M)
-FIELD_DECL = re.compile(r'^\.field\s+[^\n]*?\s([^\s:]+):', re.M)
-INVOKE = re.compile(r'invoke-\w+(?:/\w+)?\s+\{[^}]*\},\s*L([A-Za-z0-9_$/]+);->([^\s(]+)')
-SFIELD = re.compile(r's(?:get|put)(?:-object|-boolean|-byte|-char|-short|-wide)?\s+\w+,\s*'
-                    r'L([A-Za-z0-9_$/]+);->([^\s:]+):')
-NEWINST = re.compile(r'new-instance\s+\w+,\s*L([A-Za-z0-9_$/]+);')
-SUPER = re.compile(r'^\.super\s+L([A-Za-z0-9_$/]+);', re.M)
-IMPL = re.compile(r'^\.implements\s+L([A-Za-z0-9_$/]+);', re.M)
-TYPED_FIELD = re.compile(r'^\.field [^\n]*?:L([A-Za-z0-9_$/]+);', re.M)
+CLASS = re.compile(r'^\.class[ \t]+(?:\S+[ \t]+)*(L[^;\s]+;)[ \t]*$', re.M)
+METHOD = re.compile(r'^\.method[ \t]+(?:\S+[ \t]+)*([^\s(]+\([^\n]+)$', re.M)
+FIELD = re.compile(r'^\.field[ \t]+(?:\S+[ \t]+)*([^\s:]+:[^\s=]+)', re.M)
+REF = re.compile(r'(L[^;\s]+;)->([^\s,]+)')
+TYPE = re.compile(r'L[^;\s()]+;')
 
 
-def norm_method(name):
-    """baksmali prints constructors as 'constructor <init>'."""
-    return '<init>' if name in ('constructor', '<init>') else name
+def is_miui(owner):
+    return owner.startswith(('Lmiui/', 'Lcom/miui/', 'Lcom/xiaomi/', 'Lmiuix/')) or (
+        owner.startswith('Landroid/') and 'miui' in owner.lower())
 
 
 def parse_smali(root):
-    root = Path(root)
-    defined = set()
-    methods = set()
-    fields = set()
-    refs = set()
-    for f in root.rglob('*.smali'):
-        text = f.read_text(errors='replace')
-        m = CLASS_LINE.search(text)
-        if m:
-            defined.add(m.group(1)[1:-1])
-        for name in METHOD_DECL.findall(text):
-            methods.add(norm_method(name))
-        for name in FIELD_DECL.findall(text):
-            fields.add(name)
+    classes, references, types = {}, set(), set()
+    for path in Path(root).rglob('*.smali'):
+        text = path.read_text(errors='replace')
+        declaration = CLASS.search(text)
+        if not declaration:
+            raise ValueError('Missing class declaration: ' + str(path))
+        owner = declaration[1]
+        if owner in classes:
+            raise ValueError('Duplicate DEX class: ' + owner)
+        parents = re.findall(r'^\.(?:super|implements)\s+(L[^;]+;)', text, re.M)
+        classes[owner] = (set(METHOD.findall(text)) | set(FIELD.findall(text)), parents)
         body = STR.sub('""', text)
-        for line in body.splitlines():
-            s = line.strip()
-            if not s or s.startswith('#'):
-                continue
-            for cls, member in INVOKE.findall(s):
-                refs.add((cls, norm_method(member)))
-            for cls, member in SFIELD.findall(s):
-                refs.add((cls, member))
-            for cls in NEWINST.findall(s):
-                refs.add((cls, '<init>'))
-        for cls in SUPER.findall(text):
-            refs.add((cls, '<init>'))
-        for cls in IMPL.findall(text):
-            refs.add((cls, '<implements>'))
-        for cls in TYPED_FIELD.findall(text):
-            refs.add((cls, '<type>'))
-    return defined, methods, fields, refs
+        # Build-retained annotation classes may be deliberately stripped from stock DEX.
+        body = re.sub(r'(?ms)^[ \t]*\.annotation build [^\n]*\n.*?^[ \t]*\.end annotation[ \t]*$', '', body)
+        references.update((owner, member) for owner, member in REF.findall(body) if is_miui(owner))
+        types.update(owner for owner in TYPE.findall(body) if is_miui(owner))
+    return classes, references, types
 
 
-def main(app_smali, shim_smali, framework_jar, verbose=False):
-    app_defined, app_methods, app_fields, app_refs = parse_smali(app_smali)
-    shim_defined, shim_methods, shim_fields, _shim_refs = parse_smali(shim_smali)
+def unresolved(app, shims):
+    app_classes, references, types = app
+    shim_classes, _, _ = shims
+    provided = dict(shim_classes)
+    provided.update(app_classes)
+    missing = [owner + ' [class missing]' for owner in sorted(types - provided.keys())]
 
-    provided = app_defined | shim_defined
-    unresolved = []
+    def resolves(owner, member, visited):
+        if owner in visited or owner not in provided:
+            return False
+        members, parents = provided[owner]
+        if member in members:
+            return True
+        # Constructors must exist on the requested class; they are not inherited.
+        if member.startswith('<init>('):
+            return False
+        return any(resolves(parent, member, visited | {owner}) for parent in parents)
 
-    for cls, member in sorted(app_refs):
-        if not cls.startswith(('miui/', 'com/miui/', 'com/xiaomi/', 'miuix/')):
+    for owner, member in sorted(references):
+        # Internal app classes are not compatibility shims. Their own inherited
+        # Android methods are outside this deliberately scoped check.
+        if owner in app_classes or owner not in provided:
             continue
-        if cls in app_defined:
-            continue
-        if cls not in provided:
-            unresolved.append((cls, member, 'class missing'))
-            continue
-        if member in ('<type>', '<implements>'):
-            continue
-        if cls in shim_defined and cls not in app_defined:
-            if member == '<init>':
-                if '<init>' not in shim_methods:
-                    unresolved.append((cls, member, 'constructor missing'))
-            elif member not in shim_methods and member not in shim_fields:
-                unresolved.append((cls, member, 'member missing in shim'))
+        if not resolves(owner, member, set()):
+            missing.append(owner + '->' + member + ' [exact shim member missing]')
+    return missing
 
-    print(f'app classes     : {len(app_defined)}')
-    print(f'shim classes    : {len(shim_defined)}')
-    print(f'shim methods    : {len(shim_methods)}')
-    print(f'shim fields     : {len(shim_fields)}')
-    print(f'unresolved      : {len(unresolved)}')
-    for cls, member, why in unresolved:
-        print(f'  {cls}->{member}  [{why}]')
-    if verbose and not unresolved:
-        print('all MIUI/Xiaomi references resolved by app classes or shims')
-    return 1 if unresolved else 0
+
+def main(app_smali, shim_smali, _framework_jar=None, verbose=False):
+    app = parse_smali(app_smali)
+    shims = parse_smali(shim_smali)
+    missing = unresolved(app, shims)
+    print(f'app classes: {len(app[0])}; shim classes: {len(shims[0])}; unresolved: {len(missing)}')
+    for failure in missing:
+        print('  ' + failure)
+    if verbose and not missing:
+        print('PASS: exact external MIUI class/member descriptors, including android.* additions')
+    return bool(missing)
 
 
 if __name__ == '__main__':

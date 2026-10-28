@@ -143,3 +143,25 @@ def report_cloud_permissions(manifest_path: Path) -> list[str]:
             if name in CLOUD_PERMISSIONS:
                 found.append(name)
     return sorted(set(found))
+
+
+def drop_micloud_library(manifest_path: Path) -> list[str]:
+    """Drop the absent cloud framework, whose supported APIs are app-local shims.
+
+    An omitted android:required means true. Even a complete shim DEX cannot
+    satisfy PackageManager's shared-library check during package scanning.
+    Preserve every other uses-library declaration, including optional libraries.
+    """
+    ET.register_namespace('android', ANDROID_NS)
+    tree = ET.parse(manifest_path)
+    app = tree.getroot().find('application')
+    if app is None:
+        raise ValueError('manifest has no <application>')
+    removed = []
+    for node in list(app.findall('uses-library')):
+        name = node.get(f'{{{ANDROID_NS}}}name', '')
+        if name == 'micloud-sdk':
+            app.remove(node)
+            removed.append(name)
+    tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+    return removed

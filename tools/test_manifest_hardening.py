@@ -8,6 +8,28 @@ import appbuild
 import zipfile
 
 class ManifestTests(unittest.TestCase):
+    def test_micloud_is_removed_without_losing_real_libraries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'manifest.xml'
+            path.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application><uses-library android:name="micloud-sdk"/>
+              <uses-library android:name="org.apache.http.legacy" android:required="true"/>
+              <uses-library android:name="androidx.window.extensions" android:required="false"/>
+              </application></manifest>''')
+            self.assertEqual(harden.drop_micloud_library(path), ['micloud-sdk'])
+            nodes = ET.parse(path).getroot().find('application').findall('uses-library')
+            self.assertEqual([n.get('{'+harden.ANDROID_NS+'}name') for n in nodes],
+                             ['org.apache.http.legacy', 'androidx.window.extensions'])
+            self.assertEqual(harden.drop_micloud_library(path), [])
+
+    def test_privapp_audit_honors_expired_max_sdk(self):
+        root = {'children': [
+            {'tag': 'uses-permission', 'attrs': {'name': 'expired', 'maxSdkVersion': '(type 0x10)0x1c'}},
+            {'tag': 'uses-permission', 'attrs': {'name': 'current', 'maxSdkVersion': '37'}},
+            {'tag': 'uses-permission-sdk-23', 'attrs': {'name': 'unlimited'}},
+        ]}
+        self.assertEqual(checks.active_permissions(root, 37), {'current', 'unlimited'})
+
     def test_rebuilt_table_includes_its_resource_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); stock = root/'stock.apk'; rebuilt = root/'rebuilt.apk'

@@ -85,6 +85,8 @@ def patch_manifest(manifest_path: Path):
     # updates. Creation's cloud class names are obfuscated, so the family
     # matcher also covers the `cloudservice` package name.
     changed = []
+    for library in harden_manifest.drop_micloud_library(manifest_path):
+        changed.append(f'removed unavailable shared library {library}')
     disabled = harden_manifest.block_xiaomi_services(
         manifest_path, extra_components=DISABLE_COMPONENTS)
     for tag, name, family in disabled:
@@ -176,7 +178,8 @@ def main():
         dex_dir.mkdir(exist_ok=True)
         dex_files = appbuild.assemble_dex(tools, smali_dirs, dex_dir)
 
-        extra = {}
+        features = appbuild.verify_pin(appbuild.NABU_FEATURES)
+        extra = {'assets/nabu_features.xml': features.read_bytes()}
         shim_dex_dir = work / 'shimdex'
         shim_dex_dir.mkdir(exist_ok=True)
         shim_files = appbuild.assemble_dex(
@@ -200,7 +203,7 @@ def main():
         shutil.copy2(signed, a.output)
         record = appbuild.record_artifacts(
             APP, a.output,
-            [stock, ROOT / 'translations/creation-ko.tsv',
+            [stock, features, ROOT / 'translations/creation-ko.tsv',
              Path(appbuild.__file__), Path(harden_manifest.__file__), Path(__file__),
              ROOT / 'tools/build-shims.py',
              *sorted((ROOT / 'shims').rglob('*.java'))])
