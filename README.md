@@ -19,6 +19,7 @@ python3 tools/extract-sources.py --dump /path/to/shuntian-dump --nabu-dump /path
 python3 tools/build-shims.py --rom-root /path/to/pixelos --app-smali /path/to/notes-smali --keep /path/to/shim-build
 python3 tools/build-notes.py --rom-root /path/to/pixelos --shim-smali /path/to/shim-build/smali
 python3 tools/build-creation.py --rom-root /path/to/pixelos --shim-smali /path/to/shim-build/smali
+python3 tools/prepare-native.py
 python3 tools/verify-apps.py --rom-root /path/to/pixelos
 ```
 

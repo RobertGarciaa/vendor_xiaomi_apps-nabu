@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import appbuild
 import harden_manifest
+import patch_creation_consent
 from appbuild import ROOT, RomTools, run
 
 APP = 'Creation'
@@ -149,6 +150,7 @@ def main():
         smali_root = work / 'smali'
         appbuild.decode_dex(tools, stock, smali_root)
 
+        patch_creation_consent.patch(smali_root, decoded / 'AndroidManifest.xml')
         changed = patch_manifest(decoded / 'AndroidManifest.xml')
         for item in changed:
             print(' ', item)
@@ -204,7 +206,7 @@ def main():
         record = appbuild.record_artifacts(
             APP, a.output,
             [stock, features, ROOT / 'translations/creation-ko.tsv',
-             Path(appbuild.__file__), Path(harden_manifest.__file__), Path(__file__),
+             Path(appbuild.__file__), Path(harden_manifest.__file__), Path(patch_creation_consent.__file__), Path(__file__),
              ROOT / 'tools/build-shims.py',
              *sorted((ROOT / 'shims').rglob('*.java'))])
         print('built', a.output)

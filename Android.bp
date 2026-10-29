@@ -25,13 +25,3 @@ android_app_import {
 }
 
 // Xiaomi Creation ("Mi Canvas"). Signature permissions use the platform certificate.
-android_app_import {
-    name: "Creation",
-    product_specific: true,
-    owner: "xiaomi/apps-nabu",
-    apk: "proprietary/ported/product/app/Creation/Creation.apk",
-    certificate: "platform",
-    dex_preopt: {
-        enabled: false,
-    },
-}
