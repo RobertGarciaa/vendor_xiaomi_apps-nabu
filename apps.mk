@@ -8,16 +8,22 @@
 # Set TARGET_ENABLE_XIAOMI_APPS=false to build without any of these apps.
 
 TARGET_ENABLE_XIAOMI_APPS ?= true
+# Optional local document editor; disable independently of Notes and Creation.
+TARGET_ENABLE_OPLUS_DOCS ?= true
 
 ifeq ($(TARGET_ENABLE_XIAOMI_APPS),true)
 
 PRODUCT_SOONG_NAMESPACES += \
     vendor/xiaomi/apps-nabu
 
-# Notes is privileged; Creation are normal platform-signed product apps.
+# Notes is privileged; Creation and OPlus Documents are normal product apps.
 PRODUCT_PACKAGES += \
     MIUINotes \
     Creation
+
+ifeq ($(TARGET_ENABLE_OPLUS_DOCS),true)
+PRODUCT_PACKAGES += OplusDocuments
+endif
 
 # Privileged-permission allowlists must live on the same partition as the app.
 # Notes is installed to product/priv-app. Creation's signature-only permissions

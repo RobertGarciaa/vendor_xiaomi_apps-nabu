@@ -1,0 +1,16 @@
+{
+  "dump_path": "my_stock/del-app/OplusDocumentsReader/OplusDocumentsReader.apk",
+  "staging": "oplus/OplusDocumentsReader.apk",
+  "sha256": "60c014d6b5526664302400b0a4e6add870623e71b8d41f5db1e3c906a393bb6b",
+  "package": "andes.oplus.documentsreader",
+  "version_code": 17001032,
+  "version_name": "17.1.32",
+  "min_sdk": 35,
+  "target_sdk": 37,
+  "abi": "arm64-v8a",
+  "stock_dex_count": 8,
+  "patched_dex": [
+    "classes.dex",
+    "classes6.dex"
+  ]
+}

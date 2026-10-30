@@ -1,0 +1,113 @@
+--- a/classes6/emo/simpletext/control/u.smali
++++ b/classes6/emo/simpletext/control/u.smali
+@@ -17,6 +17,7 @@
+ 
+ 
+ # instance fields
++.field private nabuImeDepth:I
+ .field public a:Ljo/f;
+ 
+ .field public b:Lemo/simpletext/control/u$b;
+@@ -1163,6 +1164,10 @@
+ 
+     .line 1
+     move-object/from16 v1, p0
++    iget v0, v1, Lemo/simpletext/control/u;->nabuImeDepth:I
++    if-eqz v0, :nabu_reset_allowed
++    return-void
++    :nabu_reset_allowed
+ 
+     .line 2
+     .line 3
+@@ -5587,3 +5592,91 @@
+     .line 150
+     .line 151
+ .end method
++
++.method public setComposingText(Ljava/lang/CharSequence;I)Z
++    .registers 6
++    iget v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v0, v0, 0x1
++    iput v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    :nabu_ime_try_start
++    invoke-super {p0, p1, p2}, Landroid/view/inputmethod/BaseInputConnection;->setComposingText(Ljava/lang/CharSequence;I)Z
++    move-result v0
++    :nabu_ime_try_end
++    .catchall {:nabu_ime_try_start .. :nabu_ime_try_end} :nabu_ime_finally
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    return v0
++    :nabu_ime_finally
++    move-exception v0
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    throw v0
++.end method
++
++.method public commitText(Ljava/lang/CharSequence;I)Z
++    .registers 6
++    iget v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v0, v0, 0x1
++    iput v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    :nabu_ime_try_start
++    invoke-super {p0, p1, p2}, Landroid/view/inputmethod/BaseInputConnection;->commitText(Ljava/lang/CharSequence;I)Z
++    move-result v0
++    :nabu_ime_try_end
++    .catchall {:nabu_ime_try_start .. :nabu_ime_try_end} :nabu_ime_finally
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    return v0
++    :nabu_ime_finally
++    move-exception v0
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    throw v0
++.end method
++
++.method public finishComposingText()Z
++    .registers 4
++    iget v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v0, v0, 0x1
++    iput v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    :nabu_ime_try_start
++    invoke-super {p0}, Landroid/view/inputmethod/BaseInputConnection;->finishComposingText()Z
++    move-result v0
++    :nabu_ime_try_end
++    .catchall {:nabu_ime_try_start .. :nabu_ime_try_end} :nabu_ime_finally
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    return v0
++    :nabu_ime_finally
++    move-exception v0
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    throw v0
++.end method
++
++.method public setComposingRegion(II)Z
++    .registers 6
++    iget v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v0, v0, 0x1
++    iput v0, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    :nabu_ime_try_start
++    invoke-super {p0, p1, p2}, Landroid/view/inputmethod/BaseInputConnection;->setComposingRegion(II)Z
++    move-result v0
++    :nabu_ime_try_end
++    .catchall {:nabu_ime_try_start .. :nabu_ime_try_end} :nabu_ime_finally
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    return v0
++    :nabu_ime_finally
++    move-exception v0
++    iget v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    add-int/lit8 v1, v1, -0x1
++    iput v1, p0, Lemo/simpletext/control/u;->nabuImeDepth:I
++    throw v0
++.end method
