@@ -27,7 +27,18 @@ python3 tools/verify-apps.py --rom-root /path/to/pixelos
 
 원본·생성 APK·앱 전용 JNI는 `proprietary/` 안에 두며 Git에서 제외합니다.
 Creation의 앱 전용 JNI는 native 준비 도구로 생성합니다. 최종 이미지 용량과 실행은
-제품 빌드 및 실기기로 확인합니다. 세부 의존성과 번역은 `docs/`를 참고하세요.
+제품 빌드 및 실기기로 확인합니다.
+
+세부 기록:
+
+| 문서 | 내용 |
+| --- | --- |
+| `docs/dependencies.md` | 앱별 외부 의존성과 shim 범위 |
+| `docs/korean.md` | 한국어 리소스와 번역 검사 |
+| `docs/prebuild-review-20261028.md` | 프리빌트 검토 기록 |
+| `docs/codex-review-20261027.md` | 초기 코드 검토 |
+| `docs/runtime-fixes-20261030.md` | Creation 첫 실행 수정 |
+| `docs/uses-library-20261031.md` | APK uses-library 선언과 검사 |
 
 ## OPlus 문서 편집기
 
