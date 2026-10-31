@@ -23,7 +23,7 @@ endif
 include $$(BUILD_PREBUILT)
 endef
 
-$(eval $(call nabu-native-app-prebuilt,Creation))
+$(eval $(call nabu-native-app-prebuilt,Creation,org.apache.http.legacy androidx.window.extensions androidx.window.sidecar))
 
 ifeq ($(TARGET_ENABLE_XIAOMI_APPS),true)
 ifeq ($(TARGET_ENABLE_OPLUS_DOCS),true)

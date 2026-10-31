@@ -300,6 +300,44 @@ def check_apk(tools, name, stock, built, needs_shim, disabled_names, errors):
     return built.stat().st_size
 
 
+def uses_library_names(apk, aapt2):
+    """Optional <uses-library> names declared in an APK manifest, in order."""
+    badging = sh([aapt2, 'dump', 'badging', apk]).stdout
+    return re.findall(r"uses-library-not-required:'([^']+)'", badging)
+
+
+def check_uses_library_declarations(tools, aapt2, errors):
+    """Build-side <uses-library> declarations must match each APK manifest.
+
+    A missing declaration fails the build at verify_uses_libraries, which happens
+    late and only on the machines that get that far. Checking it here turns the
+    failure into a local, explainable error.
+    """
+    bp = (ROOT / 'Android.bp').read_text()
+    declared = {}
+    for m in re.finditer(r'android_app_import\s*\{(.*?)^\}', bp, re.S | re.M):
+        body = m.group(1)
+        name = re.search(r'name:\s*"([^"]+)"', body)
+        if not name:
+            continue
+        opt = re.search(r'optional_uses_libs:\s*\[(.*?)\]', body, re.S)
+        declared[name.group(1)] = re.findall(r'"([^"]+)"', opt.group(1)) if opt else []
+
+    for name, stock, built, _, _ in APPS:
+        apk = ROOT / built
+        if not apk.is_file():
+            continue
+        # The built APK keeps the stock manifest's uses-library set.
+        manifest_libs = uses_library_names(apk, aapt2)
+        want = declared.get(name)
+        if want is None:
+            continue
+        if want != manifest_libs:
+            errors.append(
+                f'{name}: optional_uses_libs {want} does not match the manifest '
+                f'{manifest_libs}; Soong rejects this in verify_uses_libraries')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--rom-root', required=True, type=Path)
@@ -324,6 +362,8 @@ def main():
                   '(before alignment/signing/dex changes)')
 
     print(f'{"total":12s} {total / 2**20:8.0f} MiB in prepared APKs; final product size requires Soong output')
+
+    check_uses_library_declarations(tools, tools.root / 'prebuilts/sdk/tools/linux/bin/aapt2', errors)
 
     if errors:
         print('\nFAILURES:', file=sys.stderr)

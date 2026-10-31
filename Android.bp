@@ -12,6 +12,12 @@ soong_namespace {
 
 // Xiaomi Notes. Privileged because the stock manifest needs
 // WRITE_SECURE_SETTINGS, STATUS_BAR and MANAGE_USERS-style permissions.
+//
+// The stock manifest declares optional <uses-library> entries; list them all in
+// manifest order. Soong splits out the ones with no module here (com.miui.system
+// and the four .touch.so entries) and passes them to the checker as missing, so
+// the build system stays coherent with the APK without claiming a library the
+// ROM cannot provide.
 android_app_import {
     name: "MIUINotes",
     product_specific: true,
@@ -19,6 +25,17 @@ android_app_import {
     apk: "proprietary/ported/product/priv-app/MIUINotes/MIUINotes.apk",
     certificate: "platform",
     privileged: true,
+    optional_uses_libs: [
+        "org.apache.http.legacy",
+        "com.miui.system",
+        "com.android.extensions.appfunctions",
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+        "libtflite_interface_wrap.touch.so",
+        "libestimate_interface.touch.so",
+        "libbrushstroke_interface.touch.so",
+        "librecognize_interface.touch.so",
+    ],
     dex_preopt: {
         enabled: false,
     },
